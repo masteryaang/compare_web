@@ -134,7 +134,7 @@
 
           const merged = stocks.map(r => {
             const code = r['품목코드'];
-            const name = r['품목명'];
+            const name = r['품목명[규격]'];
             const stockQty = Number(r['재고수량']) || 0;
             const orderQty = orderMap[code] || 0;
             return { code, name, stockQty, orderQty, diff: stockQty - orderQty };
