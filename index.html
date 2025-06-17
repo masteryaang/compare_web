@@ -120,7 +120,7 @@
       Promise.all([parseFile(orderInput), parseFile(stockInput)])
         .then(([orders, stocks]) => {
           const needOrder = ['품목코드','주문수량'];
-          const needStock = ['품목코드','품목명','재고수량'];
+          const needStock = ['품목코드','품목명[규격]','재고수량'];
           const oCols = orders[0] ? Object.keys(orders[0]) : [];
           const sCols = stocks[0] ? Object.keys(stocks[0]) : [];
           for (let c of needOrder) if (!oCols.includes(c)) throw `${c} 컬럼을 주문 파일에서 찾을 수 없습니다.`;
