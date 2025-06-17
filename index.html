@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주문·재고 비교</title>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <style>
+    /* 전체 레이아웃 */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f7f9fc;
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 2rem auto;
+      background: #fff;
+      padding: 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border-radius: 8px;
+    }
+    h1 {
+      margin-bottom: 1.5rem;
+      color: #2c3e50;
+      text-align: center;
+    }
+    /* 입력 & 버튼 */
+    input[type=file] {
+      display: block;
+      margin-bottom: 1rem;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      margin-top: 0.5rem;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    /* 테이블 스타일 */
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin-top: 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+    }
+    tr:nth-child(even) td {
+      background-color: #f2f2f2;
+    }
+    tr.low-diff td {
+      background-color: #ffe5e5 !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>주문·재고 비교 도구</h1>
+
+    <label>① 주문 파일 업로드 (.xlsx or .csv):</label>
+    <input type="file" id="orderFile" accept=".xlsx,.csv">
+
+    <label>② 재고 파일 업로드 (.xlsx or .csv):</label>
+    <input type="file" id="stockFile" accept=".xlsx,.csv">
+
+    <button id="run">비교 실행</button>
+    <div id="output"></div>
+  </div>
+
+  <script>
+    document.getElementById('run').addEventListener('click', () => {
+      const orderInput = document.getElementById('orderFile').files[0];
+      const stockInput = document.getElementById('stockFile').files[0];
+      if (!orderInput || !stockInput) {
+        alert('두 파일 모두 선택해 주세요.');
+        return;
+      }
+
+      function parseFile(file) {
+        return new Promise((res, rej) => {
+          const name = file.name.toLowerCase();
+          const reader = new FileReader();
+          if (name.endsWith('.csv')) {
+            reader.onload = () => {
+              const parsed = Papa.parse(reader.result, { header: true, skipEmptyLines: true });
+              res(parsed.data);
+            };
+            reader.readAsText(file, 'UTF-8');
+          } else {
+            reader.onload = () => {
+              const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
+              const sheet = wb.Sheets[wb.SheetNames[0]];
+              res(XLSX.utils.sheet_to_json(sheet, { defval: '' }));
+            };
+            reader.readAsArrayBuffer(file);
+          }
+        });
+      }
+
+      Promise.all([parseFile(orderInput), parseFile(stockInput)])
+        .then(([orders, stocks]) => {
+          const needOrder = ['품목코드','주문수량'];
+          const needStock = ['품목코드','품목명','재고수량'];
+          const oCols = orders[0] ? Object.keys(orders[0]) : [];
+          const sCols = stocks[0] ? Object.keys(stocks[0]) : [];
+          for (let c of needOrder) if (!oCols.includes(c)) throw `${c} 컬럼을 주문 파일에서 찾을 수 없습니다.`;
+          for (let c of needStock) if (!sCols.includes(c)) throw `${c} 컬럼을 재고 파일에서 찾을 수 없습니다.`;
+
+          const orderMap = {};
+          orders.forEach(r => {
+            const code = r['품목코드'], qty = Number(r['주문수량']) || 0;
+            orderMap[code] = (orderMap[code] || 0) + qty;
+          });
+
+          const merged = stocks.map(r => {
+            const code = r['품목코드'];
+            const name = r['품목명'];
+            const stockQty = Number(r['재고수량']) || 0;
+            const orderQty = orderMap[code] || 0;
+            return { code, name, stockQty, orderQty, diff: stockQty - orderQty };
+          });
+
+          // 오름차순 정렬로 변경
+          merged.sort((a, b) => a.diff - b.diff);
+
+          const out = document.getElementById('output');
+          let html = '<table><thead><tr>'
+                   + '<th>품목코드</th><th>품목명</th><th>재고수량</th>'
+                   + '<th>총주문수량</th><th>차이</th></tr></thead><tbody>';
+          merged.forEach(r => {
+            const cls = r.diff < 10 ? 'low-diff' : '';
+            html += `<tr class="${cls}">`
+                 + `<td>${r.code}</td>`
+                 + `<td>${r.name}</td>`
+                 + `<td>${r.stockQty}</td>`
+                 + `<td>${r.orderQty}</td>`
+                 + `<td>${r.diff}</td>`
+                 + `</tr>`;
+          });
+          html += '</tbody></table>';
+          out.innerHTML = html;
+        })
+        .catch(err => alert(err));
+    });
+  </script>
+</body>
+</html>
